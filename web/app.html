@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RecallAI</title>
+<style>
+  :root { --bg:#0b0d10; --panel:#14181d; --ink:#e8ecf1; --dim:#8a94a1; --accent:#5eead4; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px system-ui,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:20px 16px 40px; }
+  h1 { font-size:20px; letter-spacing:.04em; margin:0 0 4px; }
+  h1 span { color:var(--accent); }
+  .sub { color:var(--dim); margin:0 0 20px; font-size:14px; }
+  #talk { width:100%; padding:22px; font-size:20px; border:0; border-radius:14px; background:var(--accent); color:#06231f; font-weight:600; }
+  #talk.live { background:#fb7185; color:#2b0610; }
+  form { display:flex; gap:8px; margin-top:12px; }
+  input { flex:1; padding:12px; border-radius:10px; border:1px solid #2a323b; background:var(--panel); color:var(--ink); font-size:16px; }
+  form button { padding:12px 16px; border-radius:10px; border:0; background:#2a323b; color:var(--ink); }
+  #heard { color:var(--dim); margin:16px 0 4px; min-height:1.3em; }
+  #answer { font-size:22px; line-height:1.35; margin:4px 0 16px; min-height:1.5em; }
+  .car { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 10px; margin-top: 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .car::-webkit-scrollbar { display: none; }
+  .slide { flex: 0 0 100%; scroll-snap-align: center; background: var(--panel); border-radius: 14px; padding: 10px; box-sizing: border-box; }
+  .slide img { width: 100%; border-radius: 10px; display: block; }
+  .slide .cap { margin-top: 8px; font-weight: 600; }
+  .slide .t { color: var(--accent); font-variant-numeric: tabular-nums; font-size: 14px; }
+  .nav { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 8px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .nav button { background: #2a323b; color: #e8ecf1; border: 0; border-radius: 8px; padding: 8px 14px; font-size: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>RECALL<span>AI</span></h1>
+  <p class="sub">remember · reason · prove</p>
+  <button id="talk">Hold to ask</button>
+  <form id="f"><input id="q" placeholder="or type: where did I leave my keys?"><button>Ask</button></form>
+  <div id="heard"></div>
+  <div id="answer"></div>
+  <div id="proofs"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, finalText = "";
+
+// One slide per proof frame; swipe on the phone, arrows on desktop.
+function renderProofs(proofs) {
+  const box = $("proofs");
+  if (!proofs.length) { box.innerHTML = ""; return; }
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  box.innerHTML = `<div class="car">${proofs.map(p => `<div class="slide"><img src="${p.url}" loading="lazy">
+      <div class="cap">${esc(p.caption || "")}</div>
+      <div class="t">${new Date(p.t_ms).toLocaleTimeString()}</div></div>`).join("")}</div>
+    ${proofs.length > 1 ? `<div class="nav"><button id="prev">‹</button><span id="pos">1 / ${proofs.length}</span><button id="next">›</button></div>` : ""}`;
+  if (proofs.length < 2) return;
+  const car = box.querySelector(".car");
+  const idx = () => Math.round(car.scrollLeft / car.clientWidth);
+  const go = i => car.scrollTo({ left: Math.max(0, Math.min(proofs.length - 1, i)) * car.clientWidth, behavior: "smooth" });
+  car.addEventListener("scroll", () => { $("pos").textContent = `${idx() + 1} / ${proofs.length}`; });
+  $("prev").onclick = () => go(idx() - 1);
+  $("next").onclick = () => go(idx() + 1);
+}
+
+async function ask(question) {
+  $("heard").textContent = "“" + question + "”";
+  $("answer").textContent = "thinking…"; renderProofs([]);
+  try {
+    const r = await (await fetch("/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) })).json();
+    $("answer").textContent = r.answer;
+    speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(r.answer));
+    renderProofs(r.proof || []);
+  } catch (e) { $("answer").textContent = "error: " + e; }
+}
+
+function startListening() {
+  if (!SR) { $("heard").textContent = "speech recognition not supported here, type instead"; return; }
+  finalText = ""; rec = new SR(); rec.lang = "en-GB"; rec.interimResults = true;
+  rec.onresult = e => { finalText = [...e.results].map(r => r[0].transcript).join(" "); $("heard").textContent = finalText; };
+  rec.onend = () => { $("talk").classList.remove("live"); $("talk").textContent = "Hold to ask"; if (finalText.trim()) ask(finalText.trim()); };
+  rec.start(); $("talk").classList.add("live"); $("talk").textContent = "Listening…";
+}
+const stopListening = () => rec && rec.stop();
+
+const t = $("talk");
+t.addEventListener("pointerdown", e => { e.preventDefault(); startListening(); });
+["pointerup", "pointerleave", "pointercancel"].forEach(ev => t.addEventListener(ev, stopListening));
+$("f").onsubmit = e => { e.preventDefault(); if ($("q").value.trim()) ask($("q").value.trim()); };
+</script>
+</body>
+</html>

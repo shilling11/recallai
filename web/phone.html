@@ -1,0 +1,601 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c0f">
+<title>RecallAI</title>
+<style>
+  :root {
+    --bg: #0a0c0f; --card: #12161b; --line: #1e252d; --ink: #eef2f6; --dim: #8b96a3;
+    --accent: #5eead4; --accent-ink: #04201c; --rec: #fb7185; --amber: #fbbf24;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); }
+  body { margin: 0; color: var(--ink); font: 16px/1.4 -apple-system, system-ui, "Segoe UI", sans-serif; background: var(--bg);
+         padding: env(safe-area-inset-top) 0 0; min-height: 100vh; }
+  button { font-family: inherit; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 14px 16px 170px; }
+  [hidden] { display: none !important; }
+
+  .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--bg); padding-bottom: 10px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 10px; gap: 12px; }
+  .brand { font-weight: 700; letter-spacing: .14em; font-size: 14px; }
+  .brand span { color: var(--accent); }
+  .tabs { display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+  .tabs button { border: 0; background: none; color: var(--dim); font-size: 13px; font-weight: 600; padding: 6px 16px; border-radius: 999px; }
+  .tabs button.on { background: var(--accent); color: var(--accent-ink); }
+
+  /* camera */
+  .cam { position: relative; border-radius: 22px; overflow: hidden; background: #000; border: 1px solid var(--line); aspect-ratio: 4 / 3; }
+  body.has-history .cam, body.tab-scene .cam { aspect-ratio: 3 / 1; border-radius: 16px; }   /* slim once it is a pinned bar */
+  .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #start { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border: 0; border-radius: 999px; padding: 14px 24px;
+           background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 16px; }
+  #msg { position: absolute; left: 12px; right: 12px; bottom: 10px; font-size: 13px; color: #fecdd3; text-align: center; }
+  .rec { position: absolute; top: 12px; left: 12px; display: none; align-items: center; gap: 6px; font-size: 11px; letter-spacing: .12em;
+         background: rgba(0,0,0,.45); padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(6px); }
+  .rec i { width: 7px; height: 7px; border-radius: 50%; background: var(--rec); animation: pulse 1.6s infinite; }
+  .cam.on .rec { display: flex; }
+  .rec.warn { color: var(--amber); }
+  .rec.warn i { background: var(--amber); animation-duration: .8s; }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  /* ask: empty state */
+  #empty { margin-top: 18px; }
+  #empty h2 { font-size: 15px; margin: 0 0 4px; }
+  #empty p { color: var(--dim); font-size: 14px; margin: 0 0 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 9px 14px; font-size: 14px; }
+  .chip:active { background: #1a2027; }
+
+  /* ask: thread */
+  #thread { margin-top: 14px; }
+  .thread-head { display: flex; justify-content: space-between; align-items: center; color: var(--dim); font-size: 12px; letter-spacing: .08em; margin: 4px 2px 0; }
+  .thread-head button { background: none; border: 0; color: var(--dim); font-size: 12px; text-decoration: underline; padding: 4px; }
+  .turn { padding: 16px 2px 14px; border-bottom: 1px solid var(--line); scroll-margin-top: calc(var(--top-h, 0px) + 6px); }
+  .turn:last-child { border-bottom: 0; }
+  .q { color: var(--dim); font-size: 14px; font-style: italic; }
+  .a { font-size: 20px; line-height: 1.32; font-weight: 600; margin: 6px 0 4px; letter-spacing: -.01em; }
+  .a.busy { color: var(--dim); font-weight: 500; }
+  .fbtn { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 10px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 14px; padding: 8px 12px 8px 8px; color: var(--ink); text-align: left; }
+  .thumbs { display: flex; }
+  .thumbs img { width: 44px; height: 44px; object-fit: cover; border-radius: 9px; border: 2px solid var(--card); background: #000; margin-left: -12px; }
+  .thumbs img:first-child { margin-left: 0; }
+  .fcount { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+  .fcount small { display: block; color: var(--dim); font-weight: 400; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chev { color: var(--dim); transition: transform .2s; font-size: 20px; }
+  .turn.open .chev { transform: rotate(90deg); }
+  .fbody { margin-top: 10px; }
+
+  .stage { position: relative; }
+  .car { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 12px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .car::-webkit-scrollbar { display: none; }
+  .slide { flex: 0 0 100%; scroll-snap-align: center; background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+  .slide img { width: 100%; display: block; aspect-ratio: 4 / 3; object-fit: cover; background: #000; }
+  .slide .meta { padding: 10px 14px 13px; }
+  .slide .cap { font-weight: 600; font-size: 15px; }
+  .slide .t { color: var(--accent); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .pill { position: absolute; top: 10px; right: 10px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,.55);
+          backdrop-filter: blur(6px); font-variant-numeric: tabular-nums; }
+  .dots { display: flex; justify-content: center; gap: 7px; margin-top: 12px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); transition: all .2s; }
+  .dots i.on { background: var(--accent); width: 18px; border-radius: 4px; }
+  .arrow { display: none; position: absolute; top: 40%; width: 38px; height: 38px; border-radius: 50%; border: 0; align-items: center; justify-content: center;
+           background: rgba(0,0,0,.6); color: #fff; font-size: 22px; cursor: pointer; }
+  @media (hover: hover) { .arrow { display: flex; } .pill { right: 56px; } }
+
+  /* scene */
+  #scene { margin-top: 14px; }
+  .sframe { position: relative; border-radius: 16px; overflow: hidden; background: var(--card); border: 1px solid var(--line); aspect-ratio: 16 / 9; }
+  .sframe img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .sframe .stime { position: absolute; left: 10px; bottom: 10px; font-size: 12px; background: rgba(0,0,0,.55); padding: 4px 10px; border-radius: 999px;
+                   backdrop-filter: blur(6px); font-variant-numeric: tabular-nums; }
+  .sframe .none { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 14px; }
+  #gsvg { width: 100%; display: block; margin-top: 12px; }
+  .hub rect { fill: var(--card); stroke: var(--line); }
+  .hub.wearer rect { fill: var(--accent); stroke: var(--accent); }
+  .hub text { fill: var(--ink); font-size: 13px; font-weight: 700; }
+  .hub.wearer text { fill: var(--accent-ink); }
+  .chipn rect { fill: #161c22; stroke: var(--line); }
+  .chipn text { fill: var(--ink); font-size: 12px; }
+  .chipn .pred { fill: var(--dim); font-size: 11px; }
+  .link { stroke: #2b3540; fill: none; stroke-width: 1.5; }
+  .scrub { margin-top: 10px; }
+  .marks { position: relative; height: 14px; margin: 0 9px; }
+  .marks button { position: absolute; top: 0; width: 10px; height: 14px; margin-left: -5px; border: 0; background: none; padding: 0; }
+  .marks button::after { content: ""; display: block; width: 3px; height: 14px; margin: 0 auto; border-radius: 2px; background: var(--accent); }
+  .marks button.pick::after { background: var(--amber); }
+  input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); height: 28px; }
+  .sctl { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .sctl button { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600; }
+  .sctl button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .sctl .lbl { margin-left: auto; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .legend { color: var(--dim); font-size: 12px; margin-top: 10px; }
+  .legend b { display: inline-block; width: 3px; height: 10px; border-radius: 2px; background: var(--accent); margin: 0 4px 0 0; vertical-align: -1px; }
+  .legend b.pick { background: var(--amber); margin-left: 10px; }
+
+  /* mic dock */
+  .dock { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); text-align: center;
+          background: linear-gradient(to top, var(--bg) 62%, rgba(10,12,15,0)); pointer-events: none; }
+  .dock > * { pointer-events: auto; }
+  body.tab-scene .dock { display: none; }
+  body.tab-scene .wrap { padding-bottom: 40px; }
+  #talk { width: 84px; height: 84px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink);
+          display: inline-flex; align-items: center; justify-content: center; touch-action: none; -webkit-user-select: none; user-select: none;
+          -webkit-touch-callout: none; box-shadow: 0 0 0 6px rgba(94,234,212,.14); transition: transform .15s, background .15s, box-shadow .15s; }
+  #talk svg { width: 34px; height: 34px; }
+  #talk.live { background: var(--rec); color: #2b0610; transform: scale(1.08); box-shadow: 0 0 0 10px rgba(251,113,133,.2), 0 0 0 22px rgba(251,113,133,.08); }
+  #hint { margin-top: 8px; font-size: 12px; letter-spacing: .06em; color: var(--dim); min-height: 1.2em; }
+  #typed { display: none; gap: 8px; margin-bottom: 10px; }
+  body.type #typed { display: flex; }
+  #typed input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 16px; }
+  #typed button { padding: 0 16px; border-radius: 12px; border: 0; background: #2a323b; color: var(--ink); font-size: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top" id="top">
+    <header>
+      <div class="brand">RECALL<span>AI</span></div>
+      <div class="tabs"><button id="tabAsk" class="on">Ask</button><button id="tabScene">Scene</button></div>
+    </header>
+
+    <div class="cam" id="cam">
+      <video id="v" playsinline muted autoplay></video>
+      <div class="rec" id="rec"><i></i><span id="recTxt">REC</span></div>
+      <button id="start">Start camera</button>
+      <div id="msg"></div>
+    </div>
+  </div>
+
+  <!-- ASK -->
+  <div id="askView">
+    <div id="empty">
+      <h2>Ask your memory</h2>
+      <p>Hold the mic and speak, or tap a question.</p>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div id="thread" hidden>
+      <div class="thread-head"><span>CONVERSATION</span><button id="clear">Clear</button></div>
+      <div id="turns"></div>
+    </div>
+  </div>
+
+  <!-- SCENE -->
+  <div id="scene" hidden>
+    <div class="sframe"><img id="sImg" alt=""><div class="none" id="sNone" hidden>No frame for this moment</div><div class="stime" id="sTime"></div></div>
+    <svg id="gsvg" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="scrub">
+      <div class="marks" id="marks"></div>
+      <input type="range" id="sl" min="0" max="1" value="1" step="1">
+      <div class="sctl"><button id="liveBtn" class="on">Live</button><button id="playBtn">Replay</button><span class="lbl" id="sLbl"></span></div>
+      <div class="legend"><b></b>put down<b class="pick"></b>picked up</div>
+    </div>
+  </div>
+</div>
+
+<div class="dock">
+  <form id="typed"><input id="q" placeholder="type a question" autocomplete="off"><button>Ask</button></form>
+  <button id="talk" aria-label="Hold to ask">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v4"></path></svg>
+  </button>
+  <div id="hint">HOLD TO ASK</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const DIFF_THRESHOLD = 12;   // mean abs pixel diff (0-255) on a 64x48 thumbnail
+const MAX_GAP_MS = 2000;     // always send at least one frame this often
+const FPS = 30;
+const SUGGESTIONS = ["Where did I leave my keys?", "What did I do today?", "Was I outside today?", "Did I see anyone today?"];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const clock = (ms, secs) => new Date(ms).toLocaleTimeString([], secs ? { hour: "numeric", minute: "2-digit", second: "2-digit" } : { hour: "numeric", minute: "2-digit" });
+if (new URLSearchParams(location.search).has("type")) document.body.classList.add("type");   // ?type shows a typed fallback
+
+// ================= camera: motion-gated frames to the laptop =================
+const v = $("v");
+const small = document.createElement("canvas"); small.width = 64; small.height = 48;
+const sctx = small.getContext("2d", { willReadFrequently: true });
+const full = document.createElement("canvas");
+let ws = null, stream = null, prev = null, lastSent = 0, lastAck = 0, started = false, seen = 0, sent = 0;
+
+const badge = (txt, warn) => { $("recTxt").textContent = txt; $("rec").classList.toggle("warn", !!warn); };
+
+// The link to the laptop must survive network blips, ngrok resets and the phone sleeping: reconnect forever.
+function connect() {
+  if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/frames");
+  const mine = ws;
+  mine.onopen = () => { lastAck = Date.now(); badge("REC", false); };
+  mine.onmessage = () => { lastAck = Date.now(); if ($("recTxt").textContent !== "REC") badge("REC", false); };
+  mine.onclose = () => { if (ws === mine) { badge("RECONNECTING", true); setTimeout(connect, 1500); } };
+  mine.onerror = () => { try { mine.close(); } catch (e) {} };
+}
+
+async function openCamera() {
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+  v.srcObject = stream;
+  try { await v.play(); } catch (e) {}
+  try { await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+
+async function startCamera() {
+  await openCamera();
+  connect();
+  if (!started) { started = true; setInterval(tick, 1000 / FPS); setInterval(watchdog, 2000); }
+  $("cam").classList.add("on");
+}
+
+// iOS pauses the camera and drops the screen lock when the page is hidden (app switch, lock screen). Bring both back.
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden || !started) return;
+  const track = stream && stream.getVideoTracks()[0];
+  if (!track || track.readyState !== "live") { try { await openCamera(); } catch (e) { $("msg").textContent = "Camera lost: " + (e.message || e); } }
+  else { try { await v.play(); } catch (e) {} try { await navigator.wakeLock.request("screen"); } catch (e) {} }
+  connect();
+});
+
+// Open but silent for too long means frames are not getting through: say so, and force a fresh connection.
+function watchdog() {
+  if (!ws || ws.readyState !== 1) return;
+  const quiet = Date.now() - lastAck;
+  if (quiet > 20000) { try { ws.close(); } catch (e) {} }
+  else if (quiet > 8000) badge("NO SIGNAL", true);
+}
+
+function tick() {
+  if (!v.videoWidth || !ws || ws.readyState !== 1 || ws.bufferedAmount > 3e6) return;   // do not pile frames up behind a slow link
+  seen++;
+  sctx.drawImage(v, 0, 0, 64, 48);
+  const cur = sctx.getImageData(0, 0, 64, 48).data;
+  let diff = 255;
+  if (prev) {
+    let s = 0;
+    for (let i = 0; i < cur.length; i += 4) s += Math.abs(cur[i] - prev[i]) + Math.abs(cur[i+1] - prev[i+1]) + Math.abs(cur[i+2] - prev[i+2]);
+    diff = s / (cur.length / 4 * 3);
+  }
+  const now = Date.now();
+  if (diff > DIFF_THRESHOLD || now - lastSent > MAX_GAP_MS) {
+    prev = cur; lastSent = now; sent++;
+    full.width = v.videoWidth; full.height = v.videoHeight;
+    full.getContext("2d").drawImage(v, 0, 0);
+    full.toBlob(b => { if (ws && ws.readyState === 1) { ws.send(JSON.stringify({ t: now, seen, sent })); ws.send(b); } }, "image/jpeg", 0.8);
+  }
+}
+
+$("start").onclick = () => {
+  $("start").hidden = true; $("msg").textContent = "";
+  startCamera().catch(e => { $("msg").textContent = "Camera error: " + (e.message || e); $("start").hidden = false; });
+};
+
+// ================= speech out: audio from the laptop, played through an element a tap has unlocked (iOS) =================
+const player = new Audio();
+const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+const unlockAudio = () => { player.src = SILENCE; player.play().catch(() => {}); };
+const speak = text => { player.src = "/tts?text=" + encodeURIComponent(text); player.play().catch(() => {}); };
+
+// ================= conversation history =================
+// Kept in localStorage, tied to the server session: a restart wipes the frames, so it must wipe the thread too.
+const KEY = "recall.history.v1";
+let history = [], sessionId = null;
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ sid: sessionId, turns: history.slice(-30) })); } catch (e) {} };
+
+async function loadHistory() {
+  try { sessionId = (await (await fetch("/session")).json()).id; } catch (e) {}
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (d && d.sid === sessionId) history = d.turns || [];
+  } catch (e) {}
+  history.forEach((t, i) => $("turns").appendChild(turnEl(t, i === history.length - 1)));
+  refreshChrome();
+  if (history.length) window.scrollTo(0, document.body.scrollHeight);
+}
+
+function refreshChrome() {
+  const has = history.length > 0;
+  $("empty").hidden = has; $("thread").hidden = !has;
+  document.body.classList.toggle("has-history", has);
+}
+
+$("clear").onclick = () => { history = []; $("turns").innerHTML = ""; save(); refreshChrome(); };
+$("chips").innerHTML = SUGGESTIONS.map(s => `<button class="chip">${esc(s)}</button>`).join("");
+$("chips").onclick = e => { const b = e.target.closest(".chip"); if (b) { unlockAudio(); ask(b.textContent); } };
+
+// One turn = question, answer, and (if there is proof) a collapsed row of thumbnails that opens into a carousel.
+function turnEl(t, open) {
+  const el = document.createElement("section"); el.className = "turn";
+  el.innerHTML = `<div class="q">“${esc(t.q)}”</div><div class="a ${t.a ? "" : "busy"}">${esc(t.a || "Thinking…")}</div>`;
+  if (t.proof && t.proof.length) addFrames(el, t.proof, open);
+  return el;
+}
+
+function closeOthers(except) {
+  document.querySelectorAll(".turn.open").forEach(o => { if (o !== except) { o.classList.remove("open"); o.querySelector(".fbody").hidden = true; } });
+}
+
+function addFrames(el, proof, open) {
+  const box = document.createElement("div");
+  const thumbs = proof.slice(0, 3).map(p => `<img src="${p.url}" alt="" loading="lazy">`).join("");
+  const n = proof.length;
+  box.innerHTML = `<button class="fbtn"><span class="thumbs">${thumbs}</span>
+      <span class="fcount">${n} frame${n > 1 ? "s" : ""}<small>${esc(proof[0].caption || "")}</small></span><span class="chev">›</span></button>
+    <div class="fbody" hidden></div>`;
+  el.appendChild(box);
+  const btn = box.querySelector(".fbtn"), body = box.querySelector(".fbody");
+  const setOpen = on => {
+    if (on) { closeOthers(el); if (!body.firstChild) body.appendChild(buildCarousel(proof)); }   // one open at a time, built on first open
+    body.hidden = !on; el.classList.toggle("open", on);
+  };
+  btn.onclick = () => setOpen(body.hidden);
+  if (open) setOpen(true);
+}
+
+function buildCarousel(proofs) {
+  const many = proofs.length > 1;
+  const root = document.createElement("div");
+  root.innerHTML = `<div class="stage"><div class="car">${proofs.map(p => `<div class="slide"><img src="${p.url}" alt="">
+      <div class="meta"><div class="cap">${esc(p.caption || "")}</div><div class="t">${clock(p.t_ms, true)}</div></div></div>`).join("")}</div>
+    ${many ? `<div class="pill">1 / ${proofs.length}</div><button class="arrow" style="left:8px" data-d="-1">‹</button><button class="arrow" style="right:8px" data-d="1">›</button>` : ""}</div>
+    ${many ? `<div class="dots">${proofs.map((_, i) => `<i class="${i ? "" : "on"}"></i>`).join("")}</div>` : ""}`;
+  if (!many) return root;
+  const car = root.querySelector(".car");
+  const idx = () => Math.max(0, Math.min(proofs.length - 1, Math.round(car.scrollLeft / (car.clientWidth + 12))));
+  car.addEventListener("scroll", () => {
+    const i = idx();
+    root.querySelectorAll(".dots i").forEach((d, k) => d.classList.toggle("on", k === i));
+    root.querySelector(".pill").textContent = `${i + 1} / ${proofs.length}`;
+  }, { passive: true });
+  root.querySelectorAll(".arrow").forEach(b => b.onclick = () =>
+    car.scrollTo({ left: Math.max(0, Math.min(proofs.length - 1, idx() + +b.dataset.d)) * (car.clientWidth + 12), behavior: "smooth" }));
+  return root;
+}
+
+async function ask(question) {
+  setTab("ask");
+  closeOthers(null);                                   // collapse older answers so the thread stays compact
+  const turn = { q: question, a: "", proof: [] };
+  history.push(turn);
+  const el = turnEl(turn, false);
+  $("turns").appendChild(el); refreshChrome();
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  let ans, proof = [];
+  try {
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 45000);
+    const resp = await fetch("/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }), signal: ctl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) throw new Error("server said " + resp.status);
+    const r = await resp.json();
+    ans = r.answer || "I didn’t get an answer for that. Try asking another way.";
+    proof = r.proof || [];
+    speak(ans);
+  } catch (e) {
+    ans = e.name === "AbortError" ? "That took too long. Check the connection and try again."
+                                  : "Couldn’t reach the memory (" + (e.message || e) + "). Try again.";
+  }
+  turn.a = ans; turn.proof = proof; save();
+  const a = el.querySelector(".a"); a.textContent = ans; a.classList.remove("busy");
+  if (proof.length) addFrames(el, proof, true);
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ================= speech in: hold the mic button =================
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, finalText = "", holding = false, holdTimer = null;
+
+function startListening() {
+  unlockAudio();
+  if (!SR) { $("hint").textContent = "VOICE NOT AVAILABLE HERE"; return; }
+  try { if (rec) { rec.onend = null; rec.abort(); } } catch (e) {}          // never leave an old session running
+  finalText = ""; rec = new SR(); rec.lang = "en-GB"; rec.interimResults = true;
+  rec.onresult = e => { finalText = [...e.results].map(r => r[0].transcript).join(" "); $("hint").textContent = "\u201c" + finalText + "\u201d"; };
+  rec.onerror = e => { $("hint").textContent = "MIC ERROR: " + e.error.toUpperCase(); };
+  rec.onend = () => {
+    clearTimeout(holdTimer); holding = false;
+    $("talk").classList.remove("live");
+    if (finalText.trim()) { $("hint").textContent = "HOLD TO ASK"; ask(finalText.trim()); }
+    else if (!$("hint").textContent.startsWith("MIC")) $("hint").textContent = "HOLD TO ASK";
+  };
+  try { rec.start(); } catch (e) { $("hint").textContent = "TRY AGAIN"; holding = false; return; }
+  $("talk").classList.add("live"); $("hint").textContent = "LISTENING\u2026";
+  holdTimer = setTimeout(stopListening, 25000);                              // safety: never get stuck listening
+}
+function stopListening() { try { rec && rec.stop(); } catch (e) {} }
+
+const talk = $("talk");
+talk.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  try { talk.setPointerCapture(e.pointerId); } catch (err) {}               // keep the hold even if the finger drifts off the button or the page scrolls
+  holding = true; startListening();
+});
+const release = () => { if (holding) { holding = false; stopListening(); } };
+["pointerup", "pointercancel", "lostpointercapture"].forEach(ev => talk.addEventListener(ev, release));
+talk.addEventListener("contextmenu", e => e.preventDefault());               // iOS long-press menu would cancel the hold
+$("typed").onsubmit = e => { e.preventDefault(); unlockAudio(); const q = $("q").value.trim(); if (q) { $("q").value = ""; ask(q); } };
+
+// ================= tabs =================
+function setTab(name) {
+  const scene = name === "scene";
+  document.body.classList.toggle("tab-scene", scene);
+  $("askView").hidden = scene; $("scene").hidden = !scene;
+  $("tabAsk").classList.toggle("on", !scene); $("tabScene").classList.toggle("on", scene);
+  if (scene) { startLive(); } else { stopLive(); stopPlay(); }
+}
+$("tabAsk").onclick = () => setTab("ask");
+$("tabScene").onclick = () => setTab("scene");
+
+// ================= scene graph + time slider =================
+// The whole session's snapshots are fetched once ("series"); Replay and scrubbing then run locally with no network, so they
+// can't stutter or arrive out of order. Releasing the slider refines to the exact moment with one request.
+const SVGNS = "http://www.w3.org/2000/svg";
+const thumbUrl = id => "/thumb/" + id + ".jpg";
+let bounds = { min: 0, max: 0 }, series = null, live = true, liveTimer = null, playTimer = null, refineTimer = null;
+let seq = 0, lastKey = "", lastFrame = null, lastStep = null;
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("server said " + r.status);
+  return r.json();
+}
+
+function setBounds(min, max, markers) {
+  if (min == null) return;
+  bounds = { min, max };
+  const sl = $("sl"); sl.min = min; sl.max = max;
+  if (markers) drawMarks(markers);
+}
+
+function drawMarks(markers) {
+  const span = Math.max(1, bounds.max - bounds.min);
+  $("marks").innerHTML = markers.filter(m => m.t_ms >= bounds.min && m.t_ms <= bounds.max).map(m =>
+    `<button class="${m.kind === "picked_up" ? "pick" : ""}" style="left:${((m.t_ms - bounds.min) / span * 100).toFixed(2)}%" data-t="${m.t_ms}"
+      title="${esc(m.obj + " " + m.kind.replace("_", " "))}"></button>`).join("");
+}
+
+async function ensureSeries(force) {
+  if (!force && series && bounds.max - series.t_max <= 3000) return series;
+  try {
+    const sr = await getJSON("/graph/series?n=140");
+    if (sr.steps && sr.steps.length) { series = sr; setBounds(sr.t_min, sr.t_max, sr.markers); }
+  } catch (e) {}
+  return series;
+}
+
+function nearest(t) {                                    // steps are sorted by time
+  const st = series.steps; let lo = 0, hi = st.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (st[mid].t_ms < t) lo = mid + 1; else hi = mid; }
+  if (lo > 0 && Math.abs(st[lo - 1].t_ms - t) <= Math.abs(st[lo].t_ms - t)) lo--;
+  return lo;
+}
+
+// Draws one snapshot. Skips work that would change nothing, so Live does not flicker.
+function render(step, opts) {
+  lastStep = step;
+  const el = (step.t_ms - bounds.min) / 1000, tot = (bounds.max - bounds.min) / 1000;
+  const mmss = x => Math.floor(x / 60) + ":" + String(Math.floor(x % 60)).padStart(2, "0");
+  if (!(opts && opts.keepSlider)) $("sl").value = step.t_ms;                 // never fight a finger that is dragging
+  $("sTime").textContent = clock(step.t_ms, true);
+  $("sLbl").textContent = mmss(Math.max(0, el)) + " / " + mmss(tot);
+  if (step.frame_t_ms !== lastFrame) {
+    lastFrame = step.frame_t_ms;
+    const img = $("sImg");
+    if (step.frame_t_ms) { img.hidden = false; $("sNone").hidden = true; img.onerror = () => { img.hidden = true; $("sNone").hidden = false; }; img.src = thumbUrl(step.frame_t_ms); }
+    else { img.hidden = true; $("sNone").hidden = false; }
+  }
+  const key = JSON.stringify([step.nodes, step.edges]);
+  if (key !== lastKey) { lastKey = key; drawGraph(step); }
+}
+
+// Layout: every relation target (a surface, or you) is a hub; the things related to it hang underneath as labelled chips.
+function layout(g, W) {
+  const hubs = new Map();
+  const add = (hub, chip) => { if (!hubs.has(hub)) hubs.set(hub, []); const l = hubs.get(hub); if (!l.some(c => c.name === chip.name && c.pred === chip.pred)) l.push(chip); };
+  for (const e of g.edges) { if (e.s === "wearer") add("wearer", { name: e.o, pred: e.p }); else add(e.o, { name: e.s, pred: e.p }); }
+  const used = new Set(g.edges.flatMap(e => [e.s, e.o]));
+  const loose = g.nodes.filter(n => !used.has(n.id) && n.id !== "wearer");
+  if (loose.length) hubs.set("in view", loose.map(n => ({ name: n.id, pred: "" })));
+  const keys = [...hubs.keys()].sort((a, b) =>
+    (a === "wearer" ? -1 : b === "wearer" ? 1 : a === "in view" ? 1 : b === "in view" ? -1 : hubs.get(b).length - hubs.get(a).length));
+  const cols = W < 460 ? 2 : 3, gap = 10, colW = (W - gap * (cols + 1)) / cols;
+  const heights = Array(cols).fill(gap), out = [];
+  for (const k of keys) {
+    const c = heights.indexOf(Math.min(...heights)), chips = hubs.get(k);
+    const x = gap + c * (colW + gap), y = heights[c];
+    out.push({ id: k, chips, x, y, w: colW });
+    heights[c] = y + 34 + 8 + chips.length * 34 + gap;
+  }
+  return { boxes: out, height: Math.max(...heights) };
+}
+
+function drawGraph(g) {
+  const svg = $("gsvg"), W = svg.clientWidth || 340;
+  svg.innerHTML = "";
+  if (!g.nodes || !g.nodes.length) {
+    svg.setAttribute("height", 90); svg.setAttribute("viewBox", `0 0 ${W} 90`);
+    svg.innerHTML = `<text x="${W / 2}" y="48" text-anchor="middle" fill="#8b96a3" font-size="14">Nothing recognised at this moment</text>`;
+    return;
+  }
+  const { boxes, height } = layout(g, W);
+  svg.setAttribute("height", height); svg.setAttribute("viewBox", `0 0 ${W} ${height}`);
+  const mk = (n, a, parent) => { const e = document.createElementNS(SVGNS, n); for (const k in a) e.setAttribute(k, a[k]); (parent || svg).appendChild(e); return e; };
+  const clip = (s, n) => s.length > n ? s.slice(0, Math.max(1, n - 1)) + "…" : s;
+  for (const b of boxes) {
+    const hub = mk("g", { class: "hub" + (b.id === "wearer" ? " wearer" : "") });
+    mk("rect", { x: b.x, y: b.y, width: b.w, height: 34, rx: 12 }, hub);
+    mk("text", { x: b.x + 12, y: b.y + 22 }, hub).textContent = clip(b.id === "wearer" ? "you" : b.id, Math.floor(b.w / 8));
+    b.chips.forEach((c, i) => {
+      const cy = b.y + 34 + 8 + i * 34, midY = cy + 13;
+      mk("path", { class: "link", d: `M ${b.x + 14} ${b.y + 34} V ${midY} H ${b.x + 24}` });
+      const g2 = mk("g", { class: "chipn" });
+      mk("rect", { x: b.x + 24, y: cy, width: b.w - 24, height: 26, rx: 9 }, g2);
+      mk("text", { x: b.x + 34, y: cy + 17 }, g2).textContent = clip(c.name, Math.floor((b.w - 70) / 7));
+      if (c.pred) mk("text", { x: b.x + b.w - 10, y: cy + 17, "text-anchor": "end", class: "pred" }, g2).textContent = c.pred;
+    });
+  }
+}
+
+function goLive(on) { live = on; $("liveBtn").classList.toggle("on", on); }
+
+async function liveTick() {
+  if (!live) return;
+  try {
+    const g = await getJSON("/graph");
+    if (!live) return;                                   // user left Live while this was in flight
+    if (g.t_ms == null) { lastKey = ""; drawGraph({ nodes: [], edges: [] }); $("sTime").textContent = ""; $("sLbl").textContent = ""; return; }
+    setBounds(g.t_min, g.t_max, g.markers);
+    render(g);
+  } catch (e) {}
+}
+function startLive() {
+  goLive(true); stopPlay(); ++seq;
+  liveTick(); clearInterval(liveTimer); liveTimer = setInterval(liveTick, 1500);
+  ensureSeries(false);                                   // warm the timeline so the first scrub or replay is instant
+}
+function stopLive() { clearInterval(liveTimer); liveTimer = null; }
+
+// Jump to a moment: instant from the cached timeline, then refined to the exact time (stale answers are ignored).
+function jumpTo(t, opts) {
+  const mine = ++seq;
+  if (series && series.steps.length) render(series.steps[nearest(t)], opts);
+  clearTimeout(refineTimer);
+  refineTimer = setTimeout(async () => {
+    try {
+      const g = await getJSON("/graph?t=" + t);
+      if (mine !== seq || live || playTimer) return;
+      if (g.t_ms != null) render(g, opts);
+    } catch (e) {}
+  }, 160);
+}
+
+$("liveBtn").onclick = () => startLive();
+$("sl").addEventListener("input", () => { goLive(false); stopPlay(); jumpTo(+$("sl").value, { keepSlider: true }); });
+$("marks").onclick = e => { const b = e.target.closest("button"); if (b) { goLive(false); stopPlay(); jumpTo(+b.dataset.t); } };
+
+function stopPlay() { clearInterval(playTimer); playTimer = null; $("playBtn").classList.remove("on"); $("playBtn").textContent = "Replay"; }
+$("playBtn").onclick = async () => {
+  if (playTimer) { stopPlay(); return; }
+  goLive(false); ++seq;
+  const sr = await ensureSeries(true);                   // fresh timeline, so replay includes what just happened
+  if (!sr || !sr.steps.length) return;
+  const steps = sr.steps;
+  let i = nearest(+$("sl").value);
+  if (i >= steps.length - 2) i = 0;                      // at the end: start over
+  $("playBtn").classList.add("on"); $("playBtn").textContent = "Pause";
+  playTimer = setInterval(() => {
+    if (i >= steps.length) { stopPlay(); return; }
+    render(steps[i]);
+    const ahead = steps[i + 3]; if (ahead && ahead.frame_t_ms) new Image().src = thumbUrl(ahead.frame_t_ms);   // preload so frames do not pop in late
+    i++;
+  }, 140);
+};
+
+window.addEventListener("resize", () => { lastKey = ""; if (lastStep) render(lastStep, { keepSlider: true }); });
+
+new ResizeObserver(() => document.documentElement.style.setProperty("--top-h", $("top").offsetHeight + "px")).observe($("top"));
+loadHistory();
+</script>
+</body>
+</html>
